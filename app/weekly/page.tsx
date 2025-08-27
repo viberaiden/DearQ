@@ -1,194 +1,309 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useRef } from "react"
+import { useRouter } from "next/navigation"
 import { Button } from "@/components/ui/button"
-import { Card, CardContent } from "@/components/ui/card"
-import { AuthGuard } from "@/components/auth-guard"
-import { WeeklyHighlightCard } from "@/components/weekly-highlight-card"
-import { ShareModal } from "@/components/share-modal"
-import type { WeeklyHighlight } from "@/lib/types"
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { Badge } from "@/components/ui/badge"
+import { DUMMY_WEEKLY_HIGHLIGHT } from "@/lib/dummy-data"
+import { getCurrentUser } from "@/lib/auth"
+import html2canvas from "html2canvas"
 
 export default function WeeklyPage() {
-  const [weeklyData, setWeeklyData] = useState<WeeklyHighlight | null>(null)
-  const [isLoading, setIsLoading] = useState(true)
-  const [showShareModal, setShowShareModal] = useState(false)
+  const router = useRouter()
+  const [user] = useState(getCurrentUser())
+  const [isGeneratingImage, setIsGeneratingImage] = useState(false)
+  const cardRef = useRef<HTMLDivElement>(null)
 
-  useEffect(() => {
-    const fetchWeeklyHighlight = async () => {
-      try {
-        await new Promise((resolve) => setTimeout(resolve, 1500))
+  const weeklyData = DUMMY_WEEKLY_HIGHLIGHT
 
-        // Mock 데이터
-        const mockWeeklyData: WeeklyHighlight = {
-          id: "weekly_123",
-          userId: "user_123",
-          weekStart: new Date("2025-08-18"),
-          weekEnd: new Date("2025-08-24"),
-          conversations: [
-            {
-              partnerLabel: "엄마",
-              bestQuestions: [
-                "어린 시절 추억의 간식은 무엇인가요?",
-                "요즘 관심 있는 취미가 있나요?",
-                "가족과 함께하고 싶은 여행지는?",
-              ],
-              totalCount: 7,
-              responseRate: 100,
-            },
-            {
-              partnerLabel: "아빠",
-              bestQuestions: [
-                "최근 새로 배운 것이 있다면?",
-                "오늘 가장 기억에 남는 순간은?",
-                "내일 가장 기대되는 일은?",
-              ],
-              totalCount: 5,
-              responseRate: 80,
-            },
-            {
-              partnerLabel: "할머니",
-              bestQuestions: ["어린 시절 가장 좋아했던 놀이는?", "최근 감사했던 순간은?"],
-              totalCount: 3,
-              responseRate: 100,
-            },
-          ],
-          createdAt: new Date(),
-        }
+  const getWeekDateRange = () => {
+    const startDate = new Date(weeklyData.weekStart)
+    const endDate = new Date(weeklyData.weekEnd)
 
-        setWeeklyData(mockWeeklyData)
-      } catch (error) {
-        console.error("[v0] 주간 하이라이트 조회 실패:", error)
-      } finally {
-        setIsLoading(false)
+    return `${startDate.getMonth() + 1}월 ${startDate.getDate()}일 - ${endDate.getMonth() + 1}월 ${endDate.getDate()}일`
+  }
+
+  const handleShareAsImage = async () => {
+    if (!cardRef.current) return
+
+    setIsGeneratingImage(true)
+
+    try {
+      const canvas = await html2canvas(cardRef.current, {
+        backgroundColor: "#ffffff",
+        scale: 2,
+        useCORS: true,
+      })
+
+      const imageUrl = canvas.toDataURL("image/png")
+
+      // Create download link
+      const link = document.createElement("a")
+      link.download = `마음배달_주간하이라이트_${weeklyData.weekStart}.png`
+      link.href = imageUrl
+      link.click()
+
+      // Also copy to clipboard if supported
+      if (navigator.clipboard && canvas.toBlob) {
+        canvas.toBlob((blob) => {
+          if (blob) {
+            navigator.clipboard
+              .write([new ClipboardItem({ "image/png": blob })])
+              .then(() => {
+                alert("이미지가 클립보드에 복사되었습니다!")
+              })
+              .catch(() => {
+                alert("이미지가 다운로드되었습니다!")
+              })
+          }
+        })
+      } else {
+        alert("이미지가 다운로드되었습니다!")
       }
+    } catch (error) {
+      console.error("Image generation failed:", error)
+      alert("이미지 생성에 실패했습니다. 다시 시도해주세요.")
+    } finally {
+      setIsGeneratingImage(false)
     }
-
-    fetchWeeklyHighlight()
-  }, [])
-
-  const handleShare = () => {
-    setShowShareModal(true)
   }
 
-  const getTotalStats = () => {
-    if (!weeklyData) return { totalConversations: 0, averageResponseRate: 0 }
+  const handleShareText = () => {
+    const shareText = `이번 주 우리 가족 대화 💝
 
-    const totalConversations = weeklyData.conversations.reduce((sum, conv) => sum + conv.totalCount, 0)
-    const averageResponseRate =
-      weeklyData.conversations.reduce((sum, conv) => sum + conv.responseRate, 0) / weeklyData.conversations.length
+${getWeekDateRange()}
 
-    return { totalConversations, averageResponseRate: Math.round(averageResponseRate) }
+${weeklyData.highlights
+  .map(
+    (highlight) =>
+      `${highlight.labelName}님과의 Best 3 대화:
+${highlight.bestConversations.map((conv) => `• ${conv.day}: ${conv.topic}`).join("\n")}`,
+  )
+  .join("\n\n")}
+
+이번 주 대화 ${weeklyData.conversationCount}회 | 응답률 ${weeklyData.responseRate}%
+
+마음배달에서 더 많은 대화를 나눠보세요!`
+
+    if (navigator.share) {
+      navigator.share({
+        title: "마음배달 - 이번 주 우리 가족 이야기",
+        text: shareText,
+        url: window.location.origin,
+      })
+    } else {
+      navigator.clipboard.writeText(shareText)
+      alert("내용이 복사되었습니다!")
+    }
   }
 
-  if (isLoading) {
+  if (!user) {
+    router.push("/login")
+    return null
+  }
+
+  // Check if there are enough conversations
+  if (weeklyData.conversationCount < 3) {
     return (
-      <AuthGuard requireAuth={true}>
-        <div className="min-h-screen bg-background flex items-center justify-center">
-          <div className="text-center">
-            <div className="w-8 h-8 border-2 border-primary border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
-            <p className="text-muted-foreground">이번 주 이야기를 정리하는 중...</p>
+      <div className="min-h-screen bg-gradient-to-b from-orange-50 to-white">
+        <div className="container mx-auto px-4 py-6 max-w-md">
+          {/* Header */}
+          <div className="flex items-center justify-center mb-6">
+            <h1 className="text-lg font-semibold text-gray-900">주간 하이라이트</h1>
           </div>
-        </div>
-      </AuthGuard>
-    )
-  }
 
-  if (!weeklyData) {
-    return (
-      <AuthGuard requireAuth={true}>
-        <div className="min-h-screen bg-background flex items-center justify-center p-4">
-          <Card className="w-full max-w-md text-center">
-            <CardContent className="py-8">
-              <div className="text-4xl mb-4">📖</div>
-              <h3 className="text-lg font-bold mb-2">아직 이번 주 이야기가 없어요</h3>
-              <p className="text-muted-foreground mb-4">가족과 대화를 나눈 후 다시 확인해보세요</p>
-              <Button onClick={() => (window.location.href = "/")}>홈으로 돌아가기</Button>
+          {/* Empty State */}
+          <Card className="border-gray-200 bg-gray-50">
+            <CardContent className="pt-6 text-center">
+              <div className="text-4xl mb-4">📅</div>
+              <h3 className="text-lg font-semibold text-gray-700 mb-2">조금 더 대화해보세요</h3>
+              <p className="text-gray-500 mb-4">
+                주간 하이라이트는 3회 이상 대화를 나눈 후에 생성됩니다.
+                <br />
+                현재 이번 주 대화: {weeklyData.conversationCount}회
+              </p>
+              <Button className="bg-orange-600 hover:bg-orange-700" onClick={() => router.push("/home")}>
+                오늘의 질문 보기
+              </Button>
             </CardContent>
           </Card>
-        </div>
-      </AuthGuard>
-    )
-  }
 
-  const { totalConversations, averageResponseRate } = getTotalStats()
-
-  return (
-    <AuthGuard requireAuth={true}>
-      <div className="min-h-screen bg-background">
-        <div className="container mx-auto px-4 py-8 max-w-md">
-          {/* Header */}
-          <header className="text-center mb-8">
-            <h1 className="text-2xl font-bold mb-2" style={{ color: "var(--color-primary-600)" }}>
-              📖 이번 주 우리 가족 이야기
-            </h1>
-            <p className="text-muted-foreground">
-              {weeklyData.weekStart.getMonth() + 1}월 {weeklyData.weekStart.getDate()}일 ~{" "}
-              {weeklyData.weekEnd.getMonth() + 1}월 {weeklyData.weekEnd.getDate()}일
-            </p>
-          </header>
-
-          {/* Overall Stats */}
-          <Card
-            className="mb-6"
-            style={{ backgroundColor: "var(--color-primary-100)", borderColor: "var(--color-primary-400)" }}
-          >
-            <CardContent className="py-6">
-              <div className="text-center">
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <div className="text-2xl font-bold" style={{ color: "var(--color-primary-600)" }}>
-                      {totalConversations}회
-                    </div>
-                    <div className="text-sm text-muted-foreground">총 대화</div>
-                  </div>
-                  <div>
-                    <div className="text-2xl font-bold" style={{ color: "var(--color-primary-600)" }}>
-                      {averageResponseRate}%
-                    </div>
-                    <div className="text-sm text-muted-foreground">평균 응답률</div>
-                  </div>
+          {/* Progress */}
+          <Card className="mt-6 border-blue-200 bg-blue-50">
+            <CardContent className="pt-4">
+              <div className="flex items-start gap-3">
+                <span className="text-blue-500 mt-1">💡</span>
+                <div>
+                  <p className="text-sm text-blue-700 font-medium mb-1">주간 하이라이트 안내</p>
+                  <ul className="text-xs text-blue-600 space-y-1">
+                    <li>• 매주 일요일 저녁 6시에 자동으로 생성됩니다</li>
+                    <li>• 가족별 Best 3 대화를 선별해드려요</li>
+                    <li>• 카카오톡이나 SNS로 공유할 수 있어요</li>
+                  </ul>
                 </div>
               </div>
             </CardContent>
           </Card>
+        </div>
+      </div>
+    )
+  }
 
-          {/* Family Conversations */}
-          <div className="space-y-4 mb-8">
-            {weeklyData.conversations.map((conversation, index) => (
-              <WeeklyHighlightCard key={index} conversation={conversation} />
-            ))}
-          </div>
-
-          {/* Share Actions */}
-          <div className="space-y-3 mb-8">
-            <Button
-              onClick={handleShare}
-              className="w-full h-12"
-              style={{ backgroundColor: "#FEE500", color: "#000000" }}
-            >
-              <span className="mr-2">💬</span>
-              카카오톡 공유하기
-            </Button>
-            <Button onClick={handleShare} variant="outline" className="w-full bg-transparent">
-              <span className="mr-2">📷</span>
-              인스타그램 스토리 공유
-            </Button>
-          </div>
-
-          {/* Navigation */}
-          <div className="space-y-3">
-            <Button onClick={() => (window.location.href = "/history")} variant="ghost" className="w-full">
-              지난 주 이야기 보기
-            </Button>
-            <Button onClick={() => (window.location.href = "/")} variant="ghost" className="w-full">
-              홈으로 돌아가기
-            </Button>
-          </div>
+  return (
+    <div className="min-h-screen bg-gradient-to-b from-orange-50 to-white">
+      <div className="container mx-auto px-4 py-6 max-w-md">
+        {/* Header */}
+        <div className="flex items-center justify-center mb-6">
+          <h1 className="text-lg font-semibold text-gray-900">주간 하이라이트</h1>
         </div>
 
-        {/* Share Modal */}
-        {showShareModal && <ShareModal weeklyData={weeklyData} onClose={() => setShowShareModal(false)} />}
+        {/* Shareable Card */}
+        <div ref={cardRef} className="mb-6">
+          <Card className="border-orange-200 bg-gradient-to-br from-orange-100 to-orange-50 overflow-hidden">
+            <CardHeader className="pb-4 text-center">
+              <div className="text-3xl mb-2">💝</div>
+              <CardTitle className="text-xl text-orange-700 mb-1">이번 주 우리 가족 대화</CardTitle>
+              <p className="text-orange-600 text-sm">{getWeekDateRange()}</p>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {/* Family Highlights */}
+              {weeklyData.highlights.map((highlight, index) => (
+                <Card key={index} className="border-white bg-white/80 backdrop-blur-sm">
+                  <CardHeader className="pb-3">
+                    <CardTitle className="text-lg text-gray-800 flex items-center gap-2">
+                      <span className="text-2xl">
+                        {highlight.labelName === "엄마" ? "👩" : highlight.labelName === "아빠" ? "👨" : "👤"}
+                      </span>
+                      {highlight.labelName}님과의 Best 3 대화
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="space-y-2">
+                      {highlight.bestConversations.map((conversation, convIndex) => (
+                        <div key={convIndex} className="flex items-start gap-3">
+                          <Badge variant="secondary" className="bg-orange-100 text-orange-700 text-xs shrink-0">
+                            {conversation.day}
+                          </Badge>
+                          <p className="text-sm text-gray-700 leading-relaxed">{conversation.topic}</p>
+                        </div>
+                      ))}
+                    </div>
+                  </CardContent>
+                </Card>
+              ))}
+
+              {/* Statistics */}
+              <Card className="border-white bg-white/80 backdrop-blur-sm">
+                <CardContent className="pt-4">
+                  <div className="flex justify-center items-center gap-8">
+                    <div className="text-center">
+                      <div className="text-2xl font-bold text-orange-600">{weeklyData.conversationCount}</div>
+                      <div className="text-xs text-gray-600">이번 주 대화</div>
+                    </div>
+                    <div className="w-px h-8 bg-gray-300"></div>
+                    <div className="text-center">
+                      <div className="text-2xl font-bold text-green-600">{weeklyData.responseRate}%</div>
+                      <div className="text-xs text-gray-600">응답률</div>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+
+              {/* Footer */}
+              <div className="text-center pt-2">
+                <p className="text-xs text-orange-600 font-medium">마음배달</p>
+                <p className="text-xs text-orange-500">매일 하나의 질문으로 가족의 마음을 배달합니다</p>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+
+        {/* Share Buttons */}
+        <div className="space-y-3 mb-6">
+          <Button
+            className="w-full h-12 bg-orange-600 hover:bg-orange-700 text-slate-50"
+            onClick={handleShareAsImage}
+            disabled={isGeneratingImage}
+          >
+            {isGeneratingImage ? "이미지 생성 중..." : "이미지로 저장하기"}
+          </Button>
+
+          <Button
+            variant="outline"
+            className="w-full h-12 border-green-600 text-green-600 hover:bg-green-50 bg-transparent"
+            onClick={handleShareText}
+          >
+            카카오톡 공유하기
+          </Button>
+        </div>
+
+        {/* Additional Actions */}
+        <div className="grid grid-cols-2 gap-3 mb-6">
+          <Button
+            variant="outline"
+            className="h-12 border-purple-600 text-purple-600 hover:bg-purple-50 bg-transparent"
+            onClick={() => router.push("/history")}
+          >
+            지난 대화 보기
+          </Button>
+          <Button
+            variant="outline"
+            className="h-12 border-blue-600 text-blue-600 hover:bg-blue-50 bg-transparent"
+            onClick={() => router.push("/home")}
+          >
+            오늘의 질문
+          </Button>
+        </div>
+
+        {/* Info */}
+        <Card className="border-blue-200 bg-blue-50">
+          <CardContent className="pt-4">
+            <div className="flex items-start gap-3">
+              <span className="text-blue-500 mt-1">ℹ️</span>
+              <div>
+                <p className="text-sm text-blue-700 font-medium mb-1">주간 하이라이트 안내</p>
+                <ul className="text-xs text-blue-600 space-y-1">
+                  <li>• 매주 일요일 저녁 6시에 자동으로 생성됩니다</li>
+                  <li>• 가족과의 소중한 대화를 기록으로 남겨보세요</li>
+                  <li>• 이미지나 텍스트로 SNS에 공유할 수 있어요</li>
+                </ul>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Previous Weeks */}
+        <Card className="mt-6 border-gray-200">
+          <CardHeader className="pb-3">
+            <CardTitle className="text-lg text-gray-900">지난 주 하이라이트</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-3">
+              <div
+                className="flex items-center justify-between p-3 rounded-lg border border-gray-200 hover:bg-gray-50 cursor-pointer"
+                onClick={() => router.push("/weekly/detail/2025-08-12")}
+              >
+                <div>
+                  <p className="font-medium text-gray-800">8월 12일 - 8월 18일</p>
+                  <p className="text-sm text-gray-600">5회 대화 • 응답률 80%</p>
+                </div>
+                <span className="text-gray-400">→</span>
+              </div>
+              <div
+                className="flex items-center justify-between p-3 rounded-lg border border-gray-200 hover:bg-gray-50 cursor-pointer"
+                onClick={() => router.push("/weekly/detail/2025-08-05")}
+              >
+                <div>
+                  <p className="font-medium text-gray-800">8월 5일 - 8월 11일</p>
+                  <p className="text-sm text-gray-600">3회 대화 • 응답률 100%</p>
+                </div>
+                <span className="text-gray-400">→</span>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
       </div>
-    </AuthGuard>
+    </div>
   )
 }

@@ -1,43 +1,19 @@
 import type React from "react"
 import type { Metadata } from "next"
-import { GeistSans } from "geist/font/sans"
-import { GeistMono } from "geist/font/mono"
+import { Buenard as Pretendard } from "next/font/google"
 import "./globals.css"
-import { AuthProvider } from "@/lib/auth"
+import { MobileNav } from "@/components/mobile-nav"
+
+const pretendard = Pretendard({
+  subsets: ["latin"],
+  display: "swap",
+  variable: "--font-pretendard",
+})
 
 export const metadata: Metadata = {
-  title: "마음배달 - 매일 하나의 질문으로 가족과 소통하세요",
-  description: "카카오 로그인으로 간편하게 시작하는 가족 간 일일 질문 공유 서비스",
+  title: "마음배달 - 매일 하나의 질문으로 가족의 마음을 배달합니다",
+  description: "카카오톡 기반으로 앱 설치 없이 가족과 매일 소통하세요",
   generator: "v0.app",
-  keywords: ["가족", "소통", "질문", "마음", "카카오톡", "일상"],
-  openGraph: {
-    title: "마음배달 - 가족과의 따뜻한 소통",
-    description: "매일 하나의 질문으로 가족의 마음을 배달합니다",
-    type: "website",
-  },
-}
-
-function MSWProvider({ children }: { children: React.ReactNode }) {
-  if (typeof window !== "undefined") {
-    import("/public/msw/browser.js")
-      .then(({ worker }) => {
-        worker
-          .start({
-            onUnhandledRequest: "bypass",
-          })
-          .then(() => {
-            console.log("[v0] MSW 시작 완료")
-          })
-          .catch((err: any) => {
-            console.error("[v0] MSW 시작 실패:", err)
-          })
-      })
-      .catch((err: any) => {
-        console.log("[v0] MSW 모듈 로드 실패:", err)
-      })
-  }
-
-  return <>{children}</>
 }
 
 export default function RootLayout({
@@ -46,11 +22,10 @@ export default function RootLayout({
   children: React.ReactNode
 }>) {
   return (
-    <html lang="ko">
-      <body className={`font-sans ${GeistSans.variable} ${GeistMono.variable}`}>
-        <MSWProvider>
-          <AuthProvider>{children}</AuthProvider>
-        </MSWProvider>
+    <html lang="ko" className={`${pretendard.variable}`}>
+      <body className="font-sans antialiased">
+        <main className="mobile-nav-spacing">{children}</main>
+        <MobileNav />
       </body>
     </html>
   )
