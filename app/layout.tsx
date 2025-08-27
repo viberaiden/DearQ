@@ -1,13 +1,14 @@
 import type React from "react"
 import type { Metadata } from "next"
-import { Buenard as Pretendard } from "next/font/google"
+import { Inter } from "next/font/google"
 import "./globals.css"
 import { MobileNav } from "@/components/mobile-nav"
 
-const pretendard = Pretendard({
+const inter = Inter({
   subsets: ["latin"],
+  weight: ["400", "500", "600", "700"],
   display: "swap",
-  variable: "--font-pretendard",
+  variable: "--font-inter",
 })
 
 export const metadata: Metadata = {
@@ -22,7 +23,7 @@ export default function RootLayout({
   children: React.ReactNode
 }>) {
   return (
-    <html lang="ko" className={`${pretendard.variable}`}>
+    <html lang="ko" className={`${inter.variable}`}>
       <body className="font-sans antialiased">
         <main className="mobile-nav-spacing">{children}</main>
         <MobileNav />
